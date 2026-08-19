@@ -24,7 +24,9 @@ You are a coding agent. Your job is to complete the given task by using the tool
 ## Service Log Rules
 - Every background service must write its output to a log file under /tmp/
 - Backend : uvicorn main:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 &
-- Frontend: npm run dev > /tmp/frontend.log 2>&1 &
+- Frontend: npm run dev -- --host 0.0.0.0 > /tmp/frontend.log 2>&1 &
+  (Vite/React/Angular dev servers bind to localhost by default — the --host flag above is required,
+  plain "npm run dev" is NOT sufficient even though the rule above says bind to 0.0.0.0)
 - After starting any service wait 3 seconds then read its log file to confirm it started
 - If the log shows errors fix them before moving on
 - Example verification flow:
