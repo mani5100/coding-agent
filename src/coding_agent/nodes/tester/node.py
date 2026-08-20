@@ -126,8 +126,34 @@ def _run_test_loop(
                     tool_args["content"] = json.dumps(content_val, indent=2)
 
             tool_fn = TESTER_TOOL_MAP.get(tool_name)
+            
             if tool_fn is None:
-                result = {"success": False, "message": f"Unknown tool: {tool_name}"}
+                result = {
+                    "success": False,
+                    "message": f"Unknown tool: {tool_name}",
+                }
+            
+            elif tool_name in ("write_file", "edit_file"):
+                path = tool_args.get("path", "")
+            
+                if not _is_allowed_test_path(path, working_dir):
+                    logger.warning(
+                        f"Tester blocked from modifying non-test file: {path}"
+                    )
+            
+                    result = {
+                        "success": False,
+                        "message": (
+                            "TESTER_PERMISSION_DENIED: "
+                            "The Tester may only create or modify test files. "
+                            f"Production/source file modification is not allowed: {path}. "
+                            "If application code needs to change, report the failure "
+                            "so it can be routed back to the Coder."
+                        ),
+                    }
+                else:
+                    result = tool_fn.invoke(tool_args)
+            
             else:
                 result = tool_fn.invoke(tool_args)
 
@@ -238,3 +264,58 @@ def tester_node(state: GraphState) -> GraphState:
         "test_results": f"{judge.summary}\n\n{test_results}",
         "routing_decision": judge.routing_decision,
     }
+    
+    
+def _is_allowed_test_path(path: str, working_dir: str) -> bool:
+    """
+    Tester may only write/edit test files.
+
+    Allowed examples:
+      /workspace/tests/test_api.py
+      /workspace/backend/tests/test_auth.py
+      /workspace/frontend/src/__tests__/App.test.tsx
+      /workspace/frontend/src/App.test.tsx
+      /workspace/frontend/src/App.spec.tsx
+
+    Production source files are rejected.
+    """
+    if not path:
+        return False
+
+    file_path = Path(path)
+
+    # Map /workspace paths to actual working directory
+    if path.startswith("/workspace"):
+        relative = path[len("/workspace"):].lstrip("/")
+        file_path = Path(working_dir) / relative
+    elif not file_path.is_absolute():
+        file_path = Path(working_dir) / file_path
+
+    try:
+        relative_path = file_path.resolve().relative_to(
+            Path(working_dir).resolve()
+        )
+    except ValueError:
+        return False
+
+    parts = {part.lower() for part in relative_path.parts}
+    filename = relative_path.name.lower()
+
+    # Explicit test directories
+    if "tests" in parts or "__tests__" in parts or "test" in parts:
+        return True
+
+    # Common test-file conventions
+    if filename.startswith("test_"):
+        return True
+
+    if filename.endswith("_test.py"):
+        return True
+
+    if ".test." in filename:
+        return True
+
+    if ".spec." in filename:
+        return True
+
+    return False
