@@ -108,8 +108,13 @@ def act(state: AgentState) -> AgentState:
 
                 if tool_name in ("write_file", "edit_file", "read_file"):
                     path = tool_args.get("path", "")
-                    if path and not Path(path).is_absolute():
-                        tool_args["path"] = str(Path(state.working_dir) / path)
+                    if path:
+                        if path.startswith("/workspace"):
+                            # Container path → map to actual working dir
+                            relative = path[len("/workspace"):].lstrip("/")
+                            tool_args["path"] = str(Path(state.working_dir) / relative)
+                        elif not Path(path).is_absolute():
+                            tool_args["path"] = str(Path(state.working_dir) / path)
 
                 # ── Guard: dict content for JSON files ─────────────────
                 if tool_name == "write_file":
@@ -118,7 +123,30 @@ def act(state: AgentState) -> AgentState:
                         tool_args["content"] = json.dumps(content, indent=2)
                         logger.debug("Converted dict content to JSON string for write_file")
 
-                result = tool_fn.invoke(tool_args)
+                # ── Guard: block write_file on files that already exist ─
+                # Full-file rewrites from the model are the source of the
+                # whitespace/indentation corruption seen in practice. Force
+                # existing files through edit_file's targeted diffs instead.
+                if tool_name == "write_file":
+                    target_path = Path(tool_args.get("path", ""))
+                    if target_path.exists():
+                        logger.warning(
+                            f"Blocked write_file on existing file: {target_path}"
+                        )
+                        result = {
+                            "success": False,
+                            "path": str(target_path),
+                            "message": (
+                                f"'{target_path}' already exists. write_file cannot be used "
+                                "on existing files (it causes full-file rewrites that risk "
+                                "corrupting content). Use edit_file with a targeted old_string/"
+                                "new_string change instead."
+                            ),
+                        }
+                    else:
+                        result = tool_fn.invoke(tool_args)
+                else:
+                    result = tool_fn.invoke(tool_args)
 
             # ── Track files touched ────────────────────────────────────
             if tool_name in ("write_file", "edit_file") and result.get("success"):

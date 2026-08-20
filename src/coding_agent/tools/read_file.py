@@ -7,6 +7,13 @@ from coding_agent.core.log_manager import get_logger
 
 logger = get_logger(__name__)
 
+BINARY_EXTENSIONS = {
+    ".db", ".sqlite", ".sqlite3",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp",
+    ".pdf", ".zip", ".tar", ".gz", ".7z",
+    ".exe", ".dll", ".so", ".pyc",
+}
+
 
 @tool
 def read_file(path: str) -> dict:
@@ -42,7 +49,26 @@ def read_file(path: str) -> dict:
                 "message": f"Path is not a file: {path}",
             }
 
-        content = file_path.read_text(encoding="utf-8")
+        if file_path.suffix.lower() in BINARY_EXTENSIONS:
+            logger.warning(f"Refused to read binary file: {path}")
+            return {
+                "success": False,
+                "path": path,
+                "content": "",
+                "message": f"Cannot read binary file as text: {path}",
+            }
+
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            logger.warning(f"File is not valid UTF-8, refusing to read: {path} ({e})")
+            return {
+                "success": False,
+                "path": path,
+                "content": "",
+                "message": f"Cannot read file: not valid UTF-8 text (likely binary): {path}",
+            }
+
         logger.info(f"File read: {path} ({len(content)} chars)")
         return {
             "success": True,
