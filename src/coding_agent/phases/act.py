@@ -25,7 +25,9 @@ logger = get_logger(__name__)
 TOOLS = [write_file, edit_file, read_file, shell_exec, read_error_log, test_frontend]
 TOOL_MAP = {t.name: t for t in TOOLS}
 
+
 REPEAT_THRESHOLD = 3  # same failing command N times = stuck
+REPEAT_STALL_THRESHOLD = 5
 
 llm = ChatOllama(
     base_url=settings.ollama_base_url,
@@ -50,7 +52,7 @@ def act(state: AgentState) -> AgentState:
 
     # ── Stuck detection: tracks (command, exit_code) for failing commands only
     recent_failures: list[tuple[str, int]] = []
-
+    recent_commands: list[str] = []
     while state.iteration < state.max_iterations:
         state.iteration += 1
         logger.info(f"--- Iteration {state.iteration} / {state.max_iterations} ---")
@@ -95,7 +97,16 @@ def act(state: AgentState) -> AgentState:
 
             tool_fn = TOOL_MAP.get(tool_name)
             if tool_fn is None:
-                result = {"success": False, "message": f"Unknown tool: {tool_name}"}
+                result = {
+                    "success": False,
+                    "message": (
+                        f"Unknown tool: '{tool_name}'. Available tools are: "
+                        f"{', '.join(TOOL_MAP.keys())}. If you intended to signal that the "
+                        "task is complete, note that completion is not a tool call — respond "
+                        "with a plain text message (no tool call) starting with DONE, "
+                        "followed by a short summary."
+                    ),
+                }
                 logger.error(f"Unknown tool requested: {tool_name}")
             else:
                 # ── Inject state args the LLM does not supply ──────────
@@ -178,6 +189,14 @@ def act(state: AgentState) -> AgentState:
             state.last_tool_result = result
 
             # ── Stuck detection: only track failing shell commands ──────
+            # ── Stuck detection ──────────────────────────────────────────
+            # Two independent checks:
+            #   1. Same command failing repeatedly — the original check,
+            #      catches an agent hammering a broken command.
+            #   2. Same command *succeeding* repeatedly with no new tool
+            #      calls in between — catches an agent that's actually
+            #      done but can't find its way to signaling DONE, and
+            #      instead keeps re-verifying the same already-true fact.
             if tool_name == "shell_exec":
                 exit_code = result.get("exit_code", 0)
                 cmd = tool_args.get("command", "")
@@ -185,7 +204,6 @@ def act(state: AgentState) -> AgentState:
                 if exit_code != 0:
                     recent_failures.append((cmd, exit_code))
 
-                    # Keep window to last 10 failures
                     if len(recent_failures) > 10:
                         recent_failures.pop(0)
 
@@ -203,6 +221,33 @@ def act(state: AgentState) -> AgentState:
                             f"{most_common_count} times with exit_code={most_common[1]}"
                         )
                         return state
+
+                recent_commands.append(cmd)
+                if len(recent_commands) > REPEAT_STALL_THRESHOLD:
+                    recent_commands.pop(0)
+
+                if (
+                    len(recent_commands) == REPEAT_STALL_THRESHOLD
+                    and len(set(recent_commands)) == 1
+                ):
+                    logger.warning(
+                        f"Stall detected: same command repeated "
+                        f"{REPEAT_STALL_THRESHOLD} times with no other tool calls "
+                        f"in between (likely already done, stuck finding DONE): "
+                        f"{cmd!r}"
+                    )
+                    state.status = AgentStatus.DONE
+                    state.final_output = (
+                        f"Agent appears finished — command '{cmd}' was repeated "
+                        f"{REPEAT_STALL_THRESHOLD} times with no changes in between. "
+                        "Treating as complete rather than burning remaining iterations."
+                    )
+                    return state
+            else:
+                # Any non-shell_exec tool call breaks the "same command in a
+                # row" streak — we only want to catch true no-op stalls, not
+                # penalize a legitimate sequence like edit → verify → edit.
+                recent_commands.clear()
 
             # ── Add tool result to message history ─────────────────────
             messages.append(

@@ -183,6 +183,12 @@ def _judge_results(
     """
     Single structured LLM call to judge test results.
     Uses with_structured_output so no manual parsing needed.
+
+    routing_decision is NOT trusted directly from the LLM — it is derived
+    from verdict + severity, mirroring how the Reviewer node derives its
+    own routing instead of trusting a free-floating LLM-picked field. This
+    prevents a "passed" verdict from silently routing to "coder" (or any
+    other verdict/routing combination that shouldn't be possible).
     """
     judge_llm = llm.with_structured_output(JudgeResponse)
 
@@ -194,9 +200,30 @@ def _judge_results(
 
     try:
         result: JudgeResponse = judge_llm.invoke([
-    SystemMessage(content=prompt),
-    HumanMessage(content="Return your verdict now based on the test results above."),
-])
+            SystemMessage(content=prompt),
+            HumanMessage(content="Return your verdict now based on the test results above."),
+        ])
+
+        # ── Derive routing from verdict + severity ──────────────────────
+        # Never trust routing_decision directly — it's a separate field
+        # the model can (and did, in practice) set inconsistently with
+        # its own verdict.
+        if result.verdict == "passed":
+            derived_routing = "reviewer"
+        elif result.severity == "major":
+            derived_routing = "planner"
+        else:
+            derived_routing = "coder"
+
+        if derived_routing != result.routing_decision:
+            logger.warning(
+                f"Judge routing mismatch for item [{current_item.id}]: "
+                f"model said routing={result.routing_decision!r} but "
+                f"verdict={result.verdict!r}/severity={result.severity!r} "
+                f"implies {derived_routing!r}. Using derived value."
+            )
+            result.routing_decision = derived_routing
+
         logger.info(
             f"Judge verdict: {result.verdict} | "
             f"routing: {result.routing_decision} | "

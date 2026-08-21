@@ -29,7 +29,17 @@ If FAIL, explain the specific issue clearly enough for the Coder to fix it.
 
 Do not modify code.
 Do not create additional work unless it is required to satisfy the current plan item.
-</instructions>
+
+<severity_guidance>
+severity determines how a failure gets routed, so choose it carefully:
+
+- "minor": a small, localized bug in production code — a wrong comparison operator, an
+  off-by-one, a missing check, incorrect rounding, etc. The Coder can likely fix it directly.
+- "major": the required behavior is fundamentally missing, broken, or contradicts the
+  acceptance criteria in a way that suggests the plan item itself needs to be reconsidered,
+  not just patched.
+- "none": only used when verdict is "passed" — there is no issue to route.
+</severity_guidance>
 
 <item_under_test>
 ID                  : {item_id}
