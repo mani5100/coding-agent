@@ -24,7 +24,7 @@ Do not modify code.
 Do not create additional work unless it is required to satisfy the current plan item.
 """
 
-TESTER_PROMPT = """
+TESTER_WRITE_PROMPT = """
 <role>
 You are the Tester in a software development workflow.
 

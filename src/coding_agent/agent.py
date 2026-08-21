@@ -9,12 +9,12 @@ from coding_agent.core.state import AgentState, AgentStatus
 from coding_agent.graph.state import GraphState
 from coding_agent.phases.trigger import trigger
 from coding_agent.phases.act import act
-from coding_agent.phases.verify import verify
+# from coding_agent.phases.verify import verify
 
 logger = get_logger(__name__)
 
 
-# ── Single Task Agent (existing, unchanged behavior) ──────────────────────────
+# ── Coder Execution ──────────────────────────────────────────────────────
 
 def run_agent(
     task: str,
@@ -28,7 +28,7 @@ def run_agent(
     try:
         state, _sandbox = trigger(task, working_dir=working_dir, sandbox=sandbox)
         state = act(state)
-        state = verify(state, act_fn=act)
+        # state = verify(state, act_fn=act)
 
     except Exception as e:
         logger.error(f"Agent crashed: {e}", exc_info=True)
