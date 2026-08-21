@@ -62,7 +62,7 @@ def _run_test_loop(
         completed_items="\n".join(
             f"- [{i.id}] {i.title}" for i in completed_items
         ) or "None yet",
-        working_dir=working_dir,
+        working_dir=settings.container_workdir,
         code_output=state.get("code_output") or "Not available",
         unit_test_path=unit_test_path,
         integration_test_path=integration_test_path,
@@ -194,9 +194,9 @@ def _judge_results(
 
     try:
         result: JudgeResponse = judge_llm.invoke([
-            SystemMessage(content=prompt),
-            HumanMessage(content="Analyze the test results and return your verdict."),
-        ])
+    SystemMessage(content=prompt),
+    HumanMessage(content="Return your verdict now based on the test results above."),
+])
         logger.info(
             f"Judge verdict: {result.verdict} | "
             f"routing: {result.routing_decision} | "

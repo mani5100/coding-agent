@@ -61,7 +61,7 @@ def act(state: AgentState) -> AgentState:
             iteration=state.iteration,
             max_iterations=state.max_iterations,
             files_touched=state.files_touched or "None",
-            working_dir=state.working_dir,
+            working_dir=settings.container_workdir,
             logs=format_logs_for_llm(state.log_path),
         )
 
@@ -123,11 +123,31 @@ def act(state: AgentState) -> AgentState:
                         tool_args["content"] = json.dumps(content, indent=2)
                         logger.debug("Converted dict content to JSON string for write_file")
 
+                # ── Guard: block Coder from writing/editing test files ───
+                # Testing is the Tester node's job. If the Coder writes tests
+                # itself, the Tester's judge call has nothing independent
+                # left to verify against.
+                if tool_name in ("write_file", "edit_file") and _is_test_path(
+                    tool_args.get("path", ""), state.working_dir
+                ):
+                    logger.warning(
+                        f"Blocked Coder from touching test file: {tool_args.get('path', '')}"
+                    )
+                    result = {
+                        "success": False,
+                        "path": tool_args.get("path", ""),
+                        "message": (
+                            "CODER_PERMISSION_DENIED: You may not create or edit test files. "
+                            "Testing is handled separately by the Tester agent. Focus only on "
+                            "the production/application code needed to satisfy this task."
+                        ),
+                    }
+
                 # ── Guard: block write_file on files that already exist ─
                 # Full-file rewrites from the model are the source of the
                 # whitespace/indentation corruption seen in practice. Force
                 # existing files through edit_file's targeted diffs instead.
-                if tool_name == "write_file":
+                elif tool_name == "write_file":
                     target_path = Path(tool_args.get("path", ""))
                     if target_path.exists():
                         logger.warning(
@@ -198,3 +218,43 @@ def act(state: AgentState) -> AgentState:
         state.status = AgentStatus.PARTIAL
 
     return state
+
+
+
+def _is_test_path(path: str, working_dir: str) -> bool:
+    """
+    Returns True if the given path looks like a test file/location.
+    Mirrors tester/node.py's _is_allowed_test_path, but used here to
+    BLOCK the Coder from touching test files — testing is the Tester's job.
+    """
+    if not path:
+        return False
+
+    file_path = Path(path)
+
+    if path.startswith("/workspace"):
+        relative = path[len("/workspace"):].lstrip("/")
+        file_path = Path(working_dir) / relative
+    elif not file_path.is_absolute():
+        file_path = Path(working_dir) / file_path
+
+    try:
+        relative_path = file_path.resolve().relative_to(Path(working_dir).resolve())
+    except ValueError:
+        return False
+
+    parts = {part.lower() for part in relative_path.parts}
+    filename = relative_path.name.lower()
+
+    if "tests" in parts or "__tests__" in parts or "test" in parts:
+        return True
+    if filename.startswith("test_"):
+        return True
+    if filename.endswith("_test.py"):
+        return True
+    if ".test." in filename:
+        return True
+    if ".spec." in filename:
+        return True
+
+    return False

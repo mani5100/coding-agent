@@ -58,7 +58,8 @@ Acceptance Criteria : {acceptance_criteria}
 </code_output>
 
 <working_directory>
-{working_dir}
+{working_dir} is always your root inside the sandbox — never a host path. Each shell_exec call
+runs in a fresh shell there; `cd` does not persist between calls.
 </working_directory>
 """
 

@@ -1,5 +1,12 @@
 TESTER_JUDGE_PROMPT = """
-Judge whether the current plan item passed testing.
+<role>
+You are the Judge for a testing phase in a software development workflow.
+</role>
+
+<instructions>
+Judge whether the current plan item passed testing, based ONLY on the actual
+test results provided below. Do not assume or infer results that are not
+shown in the evidence.
 
 Return PASS when:
 - the required behavior works,
@@ -22,6 +29,16 @@ If FAIL, explain the specific issue clearly enough for the Coder to fix it.
 
 Do not modify code.
 Do not create additional work unless it is required to satisfy the current plan item.
+</instructions>
+
+<item_under_test>
+ID                  : {item_id}
+Acceptance Criteria : {acceptance_criteria}
+</item_under_test>
+
+<test_results>
+{test_results}
+</test_results>
 """
 
 TESTER_WRITE_PROMPT = """
@@ -86,4 +103,10 @@ Return a concise result containing:
 
 Keep the output focused on the current plan item.
 </output>
+
+<working_directory>
+{working_dir} is always your root inside the sandbox — never a host path. Each shell_exec call
+runs in a fresh shell there; `cd` does not persist between calls. Use absolute paths or chain
+commands with && in one call instead.
+</working_directory>
 """

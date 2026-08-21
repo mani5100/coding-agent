@@ -21,6 +21,9 @@ def set_sandbox(sandbox: DockerSandbox) -> None:
 def shell_exec(command: str, log_path: str, iteration: int) -> dict:
     """
     Executes a shell command inside the Docker sandbox.
+    Runs in /workspace inside the Linux sandbox — never a host path. Each call is a fresh
+    shell: `cd` from a previous call does not carry over. Use absolute paths or chain
+    commands with && in one call.
     Results are automatically written to the run log.
     Use this to run scripts, install packages, or execute any shell command.
 

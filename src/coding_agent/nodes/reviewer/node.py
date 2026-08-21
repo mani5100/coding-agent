@@ -62,7 +62,7 @@ def _run_review_loop(
         acceptance_criteria=current_item.acceptance_criteria,
         test_results=state.get("test_results") or "No test results available.",
         code_output=state.get("code_output") or "No code output available.",
-        working_dir=working_dir,
+        working_dir=settings.container_workdir,
     )
 
     messages = [
